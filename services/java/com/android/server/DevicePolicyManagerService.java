@@ -230,13 +230,14 @@ public class DevicePolicyManagerService extends IDevicePolicyManager.Stub {
 
     private static final String SEPOLICY_PATH_SEPOLICY = "/data/system/sepolicy";
 
-    private static final String SEPOLICY_PATH_SEPOLICY = "/data/security/sepolicy";
-
     private static final String SEPOLICY_PATH_PROPCTXS = "/data/security/property_contexts";
 
     private static final String SEPOLICY_PATH_FILECTXS = "/data/security/file_contexts";
 
-    private static final PolicyFileDescription[] POLICY_DESCRIPTIONS = {
+    private static final String SEPOLICY_PATH_SEAPPCTXS = "/data/security/seapp_contexts";
+
+    private static final PolicyFileDescription[] 
+POLICY_DESCRIPTIONS = {
         // 0 = SEPOLICY_FILE_SEPOLICY
         new SELinuxPolicyDescription(SEPOLICY_PATH_SEPOLICY),
         // 1 = SEPOLICY_FILE_PROPCTXS
