@@ -22,7 +22,6 @@ import static com.android.internal.util.cm.QSConstants.TILE_AUTOROTATE;
 import static com.android.internal.util.cm.QSConstants.TILE_BATTERY;
 import static com.android.internal.util.cm.QSConstants.TILE_BLUETOOTH;
 import static com.android.internal.util.cm.QSConstants.TILE_BRIGHTNESS;
-import static com.android.internal.util.cm.QSConstants.TILE_CAMERA;
 import static com.android.internal.util.cm.QSConstants.TILE_DELIMITER;
 import static com.android.internal.util.cm.QSConstants.TILE_EXPANDEDDESKTOP;
 import static com.android.internal.util.cm.QSConstants.TILE_GPS;
@@ -44,6 +43,14 @@ import static com.android.internal.util.cm.QSConstants.TILE_VOLUME;
 import static com.android.internal.util.cm.QSConstants.TILE_WIFI;
 import static com.android.internal.util.cm.QSConstants.TILE_WIFIAP;
 import static com.android.internal.util.cm.QSConstants.TILE_WIMAX;
+import static com.android.internal.util.cm.QSUtils.deviceSupportsBluetooth;
+import static com.android.internal.util.cm.QSUtils.deviceSupportsDockBattery;
+import static com.android.internal.util.cm.QSUtils.deviceSupportsImeSwitcher;
+import static com.android.internal.util.cm.QSUtils.deviceSupportsLte;
+import static com.android.internal.util.cm.QSUtils.deviceSupportsMobileData;
+import static com.android.internal.util.cm.QSUtils.deviceSupportsUsbTether;
+import static com.android.internal.util.cm.QSUtils.expandedDesktopEnabled;
+import static com.android.internal.util.cm.QSUtils.systemProfilesEnabled;
 
 import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
@@ -60,7 +67,6 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.view.LayoutInflater;
 
-import com.android.internal.util.cm.QSUtils;
 import com.android.systemui.quicksettings.AirplaneModeTile;
 import com.android.systemui.quicksettings.AlarmTile;
 import com.android.systemui.quicksettings.AutoRotateTile;
@@ -68,7 +74,6 @@ import com.android.systemui.quicksettings.BatteryTile;
 import com.android.systemui.quicksettings.BluetoothTile;
 import com.android.systemui.quicksettings.BrightnessTile;
 import com.android.systemui.quicksettings.BugReportTile;
-import com.android.systemui.quicksettings.CameraTile;
 import com.android.systemui.quicksettings.DockBatteryTile;
 import com.android.systemui.quicksettings.ExpandedDesktopTile;
 import com.android.systemui.quicksettings.GPSTile;
@@ -148,10 +153,9 @@ public class QuickSettingsController {
         mIMETile = null;
 
         // Filter items not compatible with device
-        boolean cameraSupported = QSUtils.deviceSupportsCamera();
-        boolean bluetoothSupported = QSUtils.deviceSupportsBluetooth();
-        boolean mobileDataSupported = QSUtils.deviceSupportsMobileData(mContext);
-        boolean lteSupported = QSUtils.deviceSupportsLte(mContext);
+        boolean bluetoothSupported = deviceSupportsBluetooth();
+        boolean mobileDataSupported = deviceSupportsMobileData(mContext);
+        boolean lteSupported = deviceSupportsLte(mContext);
 
         if (!bluetoothSupported) {
             TILES_DEFAULT.remove(TILE_BLUETOOTH);
@@ -197,8 +201,6 @@ public class QuickSettingsController {
                 qs = new BluetoothTile(mContext, this, mStatusBarService.mBluetoothController);
             } else if (tile.equals(TILE_BRIGHTNESS)) {
                 qs = new BrightnessTile(mContext, this, mHandler);
-            } else if (tile.equals(TILE_CAMERA) && cameraSupported) {
-                qs = new CameraTile(mContext, this, mHandler);
             } else if (tile.equals(TILE_RINGER)) {
                 qs = new RingerModeTile(mContext, this);
             } else if (tile.equals(TILE_SYNC)) {
@@ -223,7 +225,7 @@ public class QuickSettingsController {
                 qs = new SleepScreenTile(mContext, this);
             } else if (tile.equals(TILE_PROFILE)) {
                 mTileStatusUris.add(Settings.System.getUriFor(Settings.System.SYSTEM_PROFILES_ENABLED));
-                if (QSUtils.systemProfilesEnabled(resolver)) {
+                if (systemProfilesEnabled(resolver)) {
                     qs = new ProfileTile(mContext, this);
                 }
             } else if (tile.equals(TILE_NFC)) {
@@ -240,7 +242,7 @@ public class QuickSettingsController {
                 qs = new VolumeTile(mContext, this, mHandler);
             } else if (tile.equals(TILE_EXPANDEDDESKTOP)) {
                 mTileStatusUris.add(Settings.System.getUriFor(Settings.System.EXPANDED_DESKTOP_STYLE));
-                if (QSUtils.expandedDesktopEnabled(resolver)) {
+                if (expandedDesktopEnabled(resolver)) {
                     qs = new ExpandedDesktopTile(mContext, this, mHandler);
                 }
             }
@@ -281,13 +283,13 @@ public class QuickSettingsController {
             qs.setupQuickSettingsTile(inflater, mContainerView);
             mQuickSettingsTiles.add(qs);
         }
-        if (QSUtils.deviceSupportsImeSwitcher(mContext) && Settings.System.getIntForUser(resolver,
+        if (deviceSupportsImeSwitcher(mContext) && Settings.System.getIntForUser(resolver,
                     Settings.System.QS_DYNAMIC_IME, 1, UserHandle.USER_CURRENT) == 1) {
             mIMETile = new InputMethodTile(mContext, this);
             mIMETile.setupQuickSettingsTile(inflater, mContainerView);
             mQuickSettingsTiles.add(mIMETile);
         }
-        if (QSUtils.deviceSupportsUsbTether(mContext) && Settings.System.getIntForUser(resolver,
+        if (deviceSupportsUsbTether(mContext) && Settings.System.getIntForUser(resolver,
                     Settings.System.QS_DYNAMIC_USBTETHER, 1, UserHandle.USER_CURRENT) == 1) {
             QuickSettingsTile qs = new UsbTetherTile(mContext, this);
             qs.setupQuickSettingsTile(inflater, mContainerView);
@@ -296,7 +298,7 @@ public class QuickSettingsController {
     }
 
     private void loadDockBatteryTile(final ContentResolver resolver, final LayoutInflater inflater) {
-        if (!QSUtils.deviceSupportsDockBattery(mContext)) {
+        if (!deviceSupportsDockBattery(mContext)) {
             return;
         }
         if (Settings.System.getIntForUser(resolver,
