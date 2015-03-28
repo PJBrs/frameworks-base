@@ -196,11 +196,8 @@ public class QuickSettingsController {
                 qs = new TorchTile(mContext, this, mHandler);
             } else if (tile.equals(TILE_SLEEP)) {
                 qs = new SleepScreenTile(mContext, this);
-            } else if (tile.equals(TILE_PROFILE)) {
-                mTileStatusUris.add(Settings.System.getUriFor(Settings.System.SYSTEM_PROFILES_ENABLED));
-                if (systemProfilesEnabled(resolver)) {
-                    qs = new ProfileTile(mContext, this);
-                }
+            } else if (tile.equals(TILE_PROFILE) && systemProfilesEnabled(resolver)) {
+                qs = new ProfileTile(mContext, inflater, mContainerView, this);
             } else if (tile.equals(TILE_NFC)) {
                 // User cannot add the NFC tile if the device does not support it
                 // No need to check again here
@@ -213,11 +210,6 @@ public class QuickSettingsController {
                 qs = new QuietHoursTile(mContext, this);
             } else if (tile.equals(TILE_VOLUME)) {
                 qs = new VolumeTile(mContext, this, mHandler);
-            } else if (tile.equals(TILE_EXPANDEDDESKTOP)) {
-                mTileStatusUris.add(Settings.System.getUriFor(Settings.System.EXPANDED_DESKTOP_STYLE));
-                if (expandedDesktopEnabled(resolver)) {
-                    qs = new ExpandedDesktopTile(mContext, this, mHandler);
-                }
             }
             if (qs != null) {
                 qs.setupQuickSettingsTile(inflater, mContainerView);
@@ -322,15 +314,10 @@ public class QuickSettingsController {
 
         @Override
         public void onChange(boolean selfChange, Uri uri) {
-            if (mTileStatusUris.contains(uri)) {
-                mHandler.removeMessages(MSG_UPDATE_TILES);
-                mHandler.sendEmptyMessage(MSG_UPDATE_TILES);
-            } else {
-                ContentResolver resolver = mContext.getContentResolver();
+           ContentResolver resolver = mContext.getContentResolver();
                 if (mObserverMap != null && mObserverMap.get(uri) != null) {
-                    for (QuickSettingsTile tile : mObserverMap.get(uri)) {
-                        tile.onChangeUri(resolver, uri);
-                    }
+                   for (QuickSettingsTile tile : mObserverMap.get(uri)) {
+                      tile.onChangeUri(resolver, uri);
                 }
             }
         }
