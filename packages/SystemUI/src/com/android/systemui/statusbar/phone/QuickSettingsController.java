@@ -183,11 +183,11 @@ public class QuickSettingsController {
             } else if (tile.equals(TILE_SCREENTIMEOUT)) {
                 qs = new ScreenTimeoutTile(mContext, this);
             } else if (tile.equals(TILE_MOBILEDATA) && telephonySupported) {
-                qs = new MobileNetworkTile(mContext, this);
+                //qs = new MobileNetworkTile(mContext, this);
             } else if (tile.equals(TILE_LOCKSCREEN)) {
                 qs = new ToggleLockscreenTile(mContext, this);
             } else if (tile.equals(TILE_NETWORKMODE) && telephonySupported) {
-                qs = new MobileNetworkTypeTile(mContext, this);
+                //qs = new MobileNetworkTypeTile(mContext, this);
             } else if (tile.equals(TILE_AUTOROTATE)) {
                 qs = new AutoRotateTile(mContext, this, mHandler);
             } else if (tile.equals(TILE_AIRPLANE)) {
@@ -197,7 +197,7 @@ public class QuickSettingsController {
             } else if (tile.equals(TILE_SLEEP)) {
                 qs = new SleepScreenTile(mContext, this);
             } else if (tile.equals(TILE_PROFILE) && systemProfilesEnabled(resolver)) {
-                qs = new ProfileTile(mContext, inflater, mContainerView, this);
+                //qs = new ProfileTile(mContext, inflater, mContainerView, this);
             } else if (tile.equals(TILE_NFC)) {
                 // User cannot add the NFC tile if the device does not support it
                 // No need to check again here
