@@ -5169,4 +5169,7 @@
     <string name="stk_cc_ss_to_ussd">SS request is modified to USSD request.</string>
     <string name="stk_cc_ss_to_ss">SS request is modified to new SS request.</string>
 
+    <!-- Hardware Rotation lock string -->
+    <string name="toast_rotation_unlocked">Display rotation unlocked</string>
+    <string name="toast_rotation_locked">Display rotation locked</string>
 </resources>
