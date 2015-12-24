@@ -435,6 +435,7 @@ public final class SystemServer {
         NetworkScoreService networkScore = null;
         NsdService serviceDiscovery= null;
         WindowManagerService wm = null;
+        RotationSwitchObserver rotateSwitch = null;
         UsbService usb = null;
         SerialService serial = null;
         NetworkTimeUpdateService networkTimeUpdater = null;
@@ -550,6 +551,9 @@ public final class SystemServer {
             Slog.e("System", "******************************************");
             Slog.e("System", "************ Failure starting core service", e);
         }
+
+        boolean hasRotationLock = context.getResources().getBoolean(com.android
+                .internal.R.bool.config_hasRotationLockSwitch);
 
         StatusBarManagerService statusBar = null;
         INotificationManager notification = null;
@@ -861,6 +865,16 @@ public final class SystemServer {
                 reportWtf("starting WiredAccessoryManager", e);
             }
 
+            try {
+                if (hasRotationLock) {
+                    Slog.i(TAG, "Rotation Switch Observer");
+                    // Listen for switch changes
+                    rotateSwitch = new RotationSwitchObserver(context);
+                }
+            } catch (Throwable e) {
+                reportWtf("starting RotationSwitchObserver", e);
+            }
+
             if (!disableNonCoreServices) {
                 if (mPackageManager.hasSystemFeature(PackageManager.FEATURE_MIDI)) {
                     // Start MIDI Manager service
@@ -1141,6 +1155,7 @@ public final class SystemServer {
         final NetworkPolicyManagerService networkPolicyF = networkPolicy;
         final ConnectivityService connectivityF = connectivity;
         final NetworkScoreService networkScoreF = networkScore;
+        final RotationSwitchObserver rotateSwitchF = rotateSwitch;
         final WallpaperManagerService wallpaperF = wallpaper;
         final InputMethodManagerService immF = imm;
         final LocationManagerService locationF = location;
@@ -1220,6 +1235,11 @@ public final class SystemServer {
                     if (audioServiceF != null) audioServiceF.systemReady();
                 } catch (Throwable e) {
                     reportWtf("Notifying AudioService running", e);
+                }
+                try {
+                    if (rotateSwitchF != null) rotateSwitchF.systemReady();
+                } catch (Throwable e) {
+                    reportWtf("making Rotation Switch Service ready", e);
                 }
                 Watchdog.getInstance().start();
 

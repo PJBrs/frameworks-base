@@ -2416,4 +2416,9 @@
   <java-symbol type="string" name="config_packagedKeyboardName" />
 
   <java-symbol type="bool" name="config_useSystemClockforRotationSensor" />
+
+  <!-- HW rotation lock -->
+  <java-symbol type="bool" name="config_hasRotationLockSwitch" />
+  <java-symbol type="string" name="toast_rotation_unlocked" />
+  <java-symbol type="string" name="toast_rotation_locked" />
 </resources>
