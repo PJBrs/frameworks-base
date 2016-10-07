@@ -383,6 +383,36 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
         return mSubscriptionInfo;
     }
 
+    public boolean isEmergencyOnly() {
+        boolean isEmerg = false;
+        ServiceState state;
+        for (int slotId = 0; slotId < TelephonyManager.getDefault().getPhoneCount(); slotId++) {
+            state = null;
+            int[] subId = mSubscriptionManager.getSubId(slotId);
+            if (subId != null && subId.length > 0) {
+                state = mServiceStates.get(subId[0]);
+            }
+            if (state != null) {
+                if (state.getVoiceRegState() == ServiceState.STATE_IN_SERVICE)
+                    return false;
+                else if (state.isEmergencyOnly()) {
+                    isEmerg = true;
+                }
+            }
+        }
+        return isEmerg;
+    }
+
+    public int getPresentSubId() {
+        for (int slotId = 0; slotId < TelephonyManager.getDefault().getPhoneCount(); slotId++) {
+            int[] subId = mSubscriptionManager.getSubId(slotId);
+            if (subId != null && subId.length > 0 && getSimState(subId[0]) != State.ABSENT) {
+                return subId[0];
+            }
+        }
+        return -1;
+    }
+
     @Override
     public void onTrustManagedChanged(boolean managed, int userId) {
         mUserTrustIsManaged.put(userId, managed);
@@ -432,13 +462,18 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
         }
     }
 
-    private void handleFingerprintAuthenticated() {
+
+    private void handleFingerprintAuthenticated(int authUserId) {
         try {
             final int userId;
             try {
                 userId = ActivityManagerNative.getDefault().getCurrentUser().id;
             } catch (RemoteException e) {
                 Log.e(TAG, "Failed to get current user id: ", e);
+                return;
+            }
+            if (userId != authUserId) {
+                Log.d(TAG, "Fingerprint authenticated for wrong user: " + authUserId);
                 return;
             }
             if (isFingerprintDisabled(userId)) {
@@ -707,7 +742,7 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
 
         @Override
         public void onAuthenticationSucceeded(AuthenticationResult result) {
-            handleFingerprintAuthenticated();
+            handleFingerprintAuthenticated(result.getUserId());
         }
 
         @Override

@@ -44,6 +44,7 @@ import android.app.ApplicationThreadNative;
 import android.app.BroadcastOptions;
 import android.app.IActivityContainer;
 import android.app.IActivityContainerCallback;
+import android.app.IActivityManager;
 import android.app.IAppTask;
 import android.app.ITaskStackListener;
 import android.app.ProfilerInfo;
@@ -218,6 +219,7 @@ import android.os.UpdateLock;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.provider.Settings;
+import android.telecom.TelecomManager;
 import android.text.format.DateUtils;
 import android.text.format.Time;
 import android.util.AtomicFile;
@@ -2205,6 +2207,7 @@ public final class ActivityManagerService extends ActivityManagerNative
 
                 try {
                     Intent protectedAppIntent = new Intent();
+                    protectedAppIntent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK);
                     protectedAppIntent.setComponent(
                             new ComponentName("com.android.settings",
                                     "com.android.settings.applications.ProtectedAppsActivity"));
@@ -2237,6 +2240,8 @@ public final class ActivityManagerService extends ActivityManagerNative
                             .build();
                     try {
                         int[] outId = new int[1];
+                        inm.cancelNotificationWithTag("android", null,
+                                R.string.notify_package_component_protected_title, msg.arg1);
                         inm.enqueueNotificationWithTag("android", "android", null,
                                 R.string.notify_package_component_protected_title,
                                 notification, outId, mCurrentUserId);
@@ -3015,7 +3020,7 @@ public final class ActivityManagerService extends ActivityManagerNative
             if (!app.killed) {
                 Slog.wtfStack(TAG, "Removing process that hasn't been killed: " + app);
                 Process.killProcessQuiet(app.pid);
-                killProcessGroup(app.info.uid, app.pid);
+                killProcessGroup(app.uid, app.pid);
             }
             if (lrui <= mLruProcessActivityStart) {
                 mLruProcessActivityStart--;
@@ -3390,7 +3395,7 @@ public final class ActivityManagerService extends ActivityManagerNative
             // clean it up now.
             if (DEBUG_PROCESSES || DEBUG_CLEANUP) Slog.v(TAG_PROCESSES, "App died: " + app);
             checkTime(startTime, "startProcess: bad proc running, killing");
-            killProcessGroup(app.info.uid, app.pid);
+            killProcessGroup(app.uid, app.pid);
             handleAppDiedLocked(app, true, true);
             checkTime(startTime, "startProcess: done killing old proc");
         }
@@ -3646,6 +3651,15 @@ public final class ActivityManagerService extends ActivityManagerNative
             app.killedByAm = false;
             checkTime(startTime, "startProcess: starting to update pids map");
             synchronized (mPidsSelfLocked) {
+                ProcessRecord oldApp;
+                // If there is already an app occupying that pid that hasn't been cleaned up
+                if ((oldApp = mPidsSelfLocked.get(startResult.pid)) != null && !app.isolated) {
+                    // Clean up anything relating to this pid first
+                    Slog.w(TAG, "Reusing pid " + startResult.pid
+                            + " while app is still mapped to it");
+                    cleanUpApplicationRecordLocked(oldApp, false, false, -1,
+                            true /*replacingPid*/);
+                }
                 this.mPidsSelfLocked.put(startResult.pid, app);
                 if (isActivityProcess) {
                     Message msg = mHandler.obtainMessage(PROC_START_TIMEOUT_MSG);
@@ -4799,7 +4813,8 @@ public final class ActivityManagerService extends ActivityManagerNative
     private final void handleAppDiedLocked(ProcessRecord app,
             boolean restarting, boolean allowRestart) {
         int pid = app.pid;
-        boolean kept = cleanUpApplicationRecordLocked(app, restarting, allowRestart, -1);
+        boolean kept = cleanUpApplicationRecordLocked(app, restarting, allowRestart, -1,
+                false /*replacingPid*/);
         if (!kept && !restarting) {
             removeLruProcessLocked(app);
             if (pid > 0) {
@@ -4940,7 +4955,7 @@ public final class ActivityManagerService extends ActivityManagerNative
             if (!fromBinderDied) {
                 Process.killProcessQuiet(pid);
             }
-            killProcessGroup(app.info.uid, pid);
+            killProcessGroup(app.uid, pid);
             app.killed = true;
         }
 
@@ -6554,12 +6569,14 @@ public final class ActivityManagerService extends ActivityManagerNative
     }
 
     @Override
-    public void showBootMessage(final CharSequence msg, final boolean always) {
+    public void updateBootProgress(final int stage, final ApplicationInfo optimizedApp,
+            final int currentAppPos, final int totalAppCount, final boolean always) {
         if (Binder.getCallingUid() != Process.myUid()) {
             // These days only the core system can call this, so apps can't get in
             // the way of what we show about running them.
         }
-        mWindowManager.showBootMessage(msg, always);
+        mWindowManager.updateBootProgress(stage, optimizedApp,
+                currentAppPos, totalAppCount, always);
     }
 
     @Override
@@ -9066,6 +9083,27 @@ public final class ActivityManagerService extends ActivityManagerNative
         }
     }
 
+    private void cleanupProtectedComponentTasksLocked() {
+        for (int i = mRecentTasks.size() - 1; i >= 0; i--) {
+            TaskRecord tr = mRecentTasks.get(i);
+
+            for (int j = tr.mActivities.size() - 1; j >= 0; j--) {
+                ActivityRecord r = tr.mActivities.get(j);
+                ComponentName cn = r.realActivity;
+
+                try {
+                    boolean isProtected = AppGlobals.getPackageManager()
+                        .isComponentProtected(null, -1, cn, getCurrentUserIdLocked());
+                    if (isProtected) {
+                        removeTaskByIdLocked(tr.taskId, false);
+                    }
+                } catch (RemoteException re) {
+
+                }
+            }
+        }
+    }
+
     /**
      * Removes the task with the specified task id.
      *
@@ -9471,6 +9509,10 @@ public final class ActivityManagerService extends ActivityManagerNative
             synchronized (this) {
                 mStackSupervisor.setLockTaskModeLocked(null, ActivityManager.LOCK_TASK_MODE_NONE,
                         "stopLockTask", true);
+            }
+            TelecomManager tm = (TelecomManager) mContext.getSystemService(Context.TELECOM_SERVICE);
+            if (tm != null) {
+                tm.showInCallScreen(false);
             }
         } finally {
             Binder.restoreCallingIdentity(ident);
@@ -11956,8 +11998,8 @@ public final class ActivityManagerService extends ActivityManagerNative
                 intent.setComponent(comp);
                 doneReceivers.add(comp);
                 lastRi = curRi;
-                CharSequence label = ai.loadLabel(mContext.getPackageManager());
-                showBootMessage(mContext.getString(R.string.android_preparing_apk, label), false);
+                updateBootProgress(IActivityManager.BOOT_STAGE_PREPARING_APPS,
+                        ai.applicationInfo, 0, 0, false);
             }
             Slog.i(TAG, "Pre-boot of " + intent.getComponent().toShortString()
                     + " for user " + users[curUser]);
@@ -12065,6 +12107,7 @@ public final class ActivityManagerService extends ActivityManagerNative
 
             mRecentTasks.clear();
             mRecentTasks.addAll(mTaskPersister.restoreTasksLocked());
+            cleanupProtectedComponentTasksLocked();
             mRecentTasks.cleanupLocked(UserHandle.USER_ALL);
             mTaskPersister.startPersisting();
 
@@ -12079,9 +12122,8 @@ public final class ActivityManagerService extends ActivityManagerNative
                         synchronized (ActivityManagerService.this) {
                             mDidUpdate = true;
                         }
-                        showBootMessage(mContext.getText(
-                                R.string.android_upgrading_complete),
-                                false);
+                        updateBootProgress(IActivityManager.BOOT_STAGE_COMPLETE,
+                                null, 0, 0, false);
                         writeLastDonePreBootReceivers(doneReceivers);
                         systemReady(goingCallback);
                     }
@@ -12571,6 +12613,7 @@ public final class ActivityManagerService extends ActivityManagerNative
         synchronized (sb) {
             bufferWasEmpty = sb.length() == 0;
             appendDropBoxProcessHeaders(process, processName, sb);
+            sb.append("CM Version: ").append(cyanogenmod.os.Build.CYANOGENMOD_VERSION).append("\n");
             sb.append("Build: ").append(Build.FINGERPRINT).append("\n");
             sb.append("System-App: ").append(isSystemApp).append("\n");
             sb.append("Uptime-Millis: ").append(info.violationUptimeMillis).append("\n");
@@ -12840,6 +12883,7 @@ public final class ActivityManagerService extends ActivityManagerNative
         if (subject != null) {
             sb.append("Subject: ").append(subject).append("\n");
         }
+        sb.append("CM Version: ").append(cyanogenmod.os.Build.CYANOGENMOD_VERSION).append("\n");
         sb.append("Build: ").append(Build.FINGERPRINT).append("\n");
         if (Debug.isDebuggerConnected()) {
             sb.append("Debugger: Connected\n");
@@ -15869,7 +15913,8 @@ public final class ActivityManagerService extends ActivityManagerNative
      * app that was passed in must remain on the process lists.
      */
     private final boolean cleanUpApplicationRecordLocked(ProcessRecord app,
-            boolean restarting, boolean allowRestart, int index) {
+            boolean restarting, boolean allowRestart, int index, boolean replacingPid) {
+        Slog.d(TAG, "cleanUpApplicationRecord -- " + app.pid);
         if (index >= 0) {
             removeLruProcessLocked(app);
             ProcessList.remove(app.pid);
@@ -15999,7 +16044,9 @@ public final class ActivityManagerService extends ActivityManagerNative
         if (!app.persistent || app.isolated) {
             if (DEBUG_PROCESSES || DEBUG_CLEANUP) Slog.v(TAG_CLEANUP,
                     "Removing non-persistent process during cleanup: " + app);
-            removeProcessNameLocked(app.processName, app.uid);
+            if (!replacingPid) {
+                removeProcessNameLocked(app.processName, app.uid);
+            }
             if (mHeavyWeightProcess == app) {
                 mHandler.sendMessage(mHandler.obtainMessage(CANCEL_HEAVY_NOTIFICATION_MSG,
                         mHeavyWeightProcess.userId, 0));
@@ -16406,10 +16453,21 @@ public final class ActivityManagerService extends ActivityManagerNative
     // Cause the target app to be launched if necessary and its backup agent
     // instantiated.  The backup agent will invoke backupAgentCreated() on the
     // activity manager to announce its creation.
-    public boolean bindBackupAgent(ApplicationInfo app, int backupMode) {
-        if (DEBUG_BACKUP) Slog.v(TAG_BACKUP,
-                "bindBackupAgent: app=" + app + " mode=" + backupMode);
+    public boolean bindBackupAgent(String packageName, int backupMode, int userId) {
+        if (DEBUG_BACKUP) Slog.v(TAG, "bindBackupAgent: app=" + packageName + " mode=" + backupMode);
         enforceCallingPermission("android.permission.CONFIRM_FULL_BACKUP", "bindBackupAgent");
+
+        IPackageManager pm = AppGlobals.getPackageManager();
+        ApplicationInfo app = null;
+        try {
+            app = pm.getApplicationInfo(packageName, 0, userId);
+        } catch (RemoteException e) {
+            // can't happen; package manager is process-local
+        }
+        if (app == null) {
+            Slog.w(TAG, "Unable to bind backup agent for " + packageName);
+            return false;
+        }
 
         synchronized(this) {
             // !!! TODO: currently no check here that we're already bound
@@ -16935,7 +16993,8 @@ public final class ActivityManagerService extends ActivityManagerNative
         } else if (callerApp == null || !callerApp.persistent) {
             try {
                 if (AppGlobals.getPackageManager().isProtectedBroadcast(
-                        intent.getAction())) {
+                        intent.getAction()) && !AppGlobals.getPackageManager()
+                        .isProtectedBroadcastAllowed(intent.getAction(), callingUid)) {
                     String msg = "Permission Denial: not allowed to send broadcast "
                             + intent.getAction() + " from pid="
                             + callingPid + ", uid=" + callingUid;
@@ -17105,6 +17164,14 @@ public final class ActivityManagerService extends ActivityManagerNative
                 case Proxy.PROXY_CHANGE_ACTION:
                     ProxyInfo proxy = intent.getParcelableExtra(Proxy.EXTRA_PROXY_INFO);
                     mHandler.sendMessage(mHandler.obtainMessage(UPDATE_HTTP_PROXY_MSG, proxy));
+                    break;
+                case cyanogenmod.content.Intent.ACTION_PROTECTED_CHANGED:
+                    final boolean state =
+                            intent.getBooleanExtra(
+                                    cyanogenmod.content.Intent.EXTRA_PROTECTED_STATE, false);
+                    if (state == PackageManager.COMPONENT_PROTECTED_STATUS) {
+                        cleanupProtectedComponentTasksLocked();
+                    }
                     break;
             }
         }
@@ -17770,6 +17837,11 @@ public final class ActivityManagerService extends ActivityManagerNative
                 if (values.themeConfig != null) {
                     saveThemeResourceLocked(values.themeConfig,
                             !values.themeConfig.equals(mConfiguration.themeConfig));
+                }
+
+                if ((changes & ActivityInfo.CONFIG_THEME_FONT) != 0) {
+                    // Notify zygote that themes need a refresh
+                    SystemProperties.set(PROP_REFRESH_THEME, "1");
                 }
 
                 mConfigurationSeq++;
@@ -19942,7 +20014,7 @@ public final class ActivityManagerService extends ActivityManagerNative
                             // Ignore exceptions.
                         }
                     }
-                    cleanUpApplicationRecordLocked(app, false, true, -1);
+                    cleanUpApplicationRecordLocked(app, false, true, -1, false /*replacingPid*/);
                     mRemovedProcesses.remove(i);
 
                     if (app.persistent) {

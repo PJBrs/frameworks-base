@@ -887,9 +887,8 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
 
         Resources res = context.getResources();
 
-        mScreenWidth = (float) context.getResources().getDisplayMetrics().widthPixels;
-        mMinBrightness = context.getResources().getInteger(
-                com.android.internal.R.integer.config_screenBrightnessDim);
+        mScreenWidth = (float) res.getDisplayMetrics().widthPixels;
+        mMinBrightness = res.getInteger(com.android.internal.R.integer.config_screenBrightnessDim);
 
         updateDisplaySize(); // populates mDisplayMetrics
         updateResources(null);
@@ -1328,6 +1327,8 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
 
         mHeader.setNextAlarmController(mNextAlarmController);
         mHeader.setWeatherController(mWeatherController);
+
+        mNotificationPanel.setWeatherController(mWeatherController);
 
         PowerManager pm = (PowerManager) mContext.getSystemService(Context.POWER_SERVICE);
         mBroadcastReceiver.onReceive(mContext,
@@ -2969,7 +2970,7 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
                 setInteracting(StatusBarManager.WINDOW_STATUS_BAR, true);
             }
         }
-        if (mBrightnessChanged && upOrCancel) {
+        if (mBrightnessChanged && upOrCancel && !isQsExpanded()) {
             mBrightnessChanged = false;
             if (mJustPeeked && mExpandedVisible) {
                 mNotificationPanel.fling(10, false);
@@ -3697,6 +3698,7 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
         mIconController.updateResources();
         mScreenPinningRequest.onConfigurationChanged();
         mNetworkController.onConfigurationChanged();
+        mStatusBarWindowManager.onConfigurationChanged(newConfig);
     }
 
     @Override
@@ -3719,6 +3721,12 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
         updateMediaMetaData(true);
         if (mNavigationBarView != null) {
             mNavigationBarView.updateSettings();
+        }
+    }
+
+    public void hideHeadsUp() {
+        if (mUseHeadsUp && mHeadsUpManager != null) {
+            mHeadsUpManager.releaseAllImmediately();
         }
     }
 
@@ -4361,6 +4369,7 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
             e.printStackTrace();
         }
         if (mLiveLockScreenController.isShowingLiveLockScreenView()) {
+            mLiveLockScreenController.onLiveLockScreenFocusChanged(false);
             mLiveLockScreenController.getLiveLockScreenView().onKeyguardShowing(
                     mStatusBarKeyguardViewManager.isScreenTurnedOn());
         }
@@ -4528,6 +4537,10 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
 
     boolean isSecure() {
         return mStatusBarKeyguardViewManager != null && mStatusBarKeyguardViewManager.isSecure();
+    }
+
+    public boolean isKeyguardInputRestricted() {
+        return mStatusBarKeyguardViewManager != null && mStatusBarKeyguardViewManager.isInputRestricted();
     }
 
     public long calculateGoingToFullShadeDelay() {
@@ -4782,7 +4795,27 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
     }
 
     public void onUnlockHintStarted() {
-        mKeyguardIndicationController.showTransientIndication(R.string.keyguard_unlock);
+        mKeyguardIndicationController.showTransientIndication(R.string.keyguard_unlock,
+                mNotificationPanel.shouldShowScreenOnHints() ?
+                KeyguardIndicationController.IndicationDirection.UP :
+                KeyguardIndicationController.IndicationDirection.NONE);
+    }
+
+    public void onLlsHintStarted() {
+        String llsName = mLiveLockScreenController.getLiveLockScreenName();
+        mKeyguardIndicationController.showTransientIndication(
+                mContext.getString(R.string.swipe_left_hint, llsName),
+                KeyguardIndicationController.IndicationDirection.LEFT);
+    }
+
+    public void onExpandHintStarted() {
+        mKeyguardIndicationController.showTransientIndication(R.string.expand_hint,
+                KeyguardIndicationController.IndicationDirection.DOWN);
+    }
+
+    public void onNotificationsHintStarted() {
+        mKeyguardIndicationController.showTransientIndication(R.string.swipe_right_hint,
+                KeyguardIndicationController.IndicationDirection.RIGHT);
     }
 
     public void onHintFinished() {
