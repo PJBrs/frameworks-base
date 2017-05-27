@@ -95,9 +95,7 @@ public final class RotationPolicy {
         return isRotationSupported(context) &&
                 Settings.System.getIntForUser(context.getContentResolver(),
                         Settings.System.HIDE_ROTATION_LOCK_TOGGLE_FOR_ACCESSIBILITY, 0,
-                        UserHandle.USER_CURRENT) == 0 &&
-                !context.getResources().getBoolean(com.android
-                        .internal.R.bool.config_hasRotationLockSwitch);
+                        UserHandle.USER_CURRENT) == 0;
     }
 
     /**
